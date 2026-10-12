@@ -5,9 +5,15 @@ There's no launcher icon and no stock home screen first. The stock reader stays 
 as a fallback.
 
 > **Status: tested on one device**, a Tolino Vision Color running firmware 5.18.264769 with
-> KOReader kobov5 v2026.07.1. Other 5.x Tolinos (Shine 5, Shine Color) and Kobo-branded 5.x
-> devices run the same software and will probably work, but nobody has tested them. Read
-> [Recovery](#recovery) before you start.
+> KOReader kobov5 v2026.07.1. Tested: fresh install, update, uninstall and reinstall,
+> 7 consecutive boots (boot counter, see [Details](#details)), Wi-Fi, sleep and wake, USB
+> storage mode, frontlight, and Exit to the stock reader. Other 5.x Tolinos (Shine 5,
+> Shine Color) and Kobo-branded 5.x devices run the same software and will probably work, but
+> nobody has tested them. Read [Recovery](#recovery) before you start.
+>
+> An earlier development version didn't reset the firmware's boot counter, and that led to a
+> factory reset on the test device. Today's version handles it, but this is an
+> unofficial modification of your reader's system files. Use it at your own risk.
 
 ## Why
 
@@ -50,8 +56,10 @@ the stock reader.
 
 ## Uninstall
 
-1. Create an empty file `.adds/koreader-boot/uninstall`, then restart.
-2. The stock reader is back for good. Delete `.adds/koreader-boot/` if you like.
+1. Create an empty file `.adds/koreader-boot/uninstall`, then restart. The reader restarts once
+   more on its own.
+2. The stock reader is back for good. Delete `.adds/koreader-boot/` if you like. To reinstall,
+   delete only the `uninstall` file and restart.
 
 One file can't come back: `/usr/local/Kobo/memorylogger`, a diagnostic memory logger in the
 stock firmware. The hook takes its place, because that's the program the firmware starts just

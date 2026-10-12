@@ -43,8 +43,12 @@ install_start_script() {
 
 uninstall_start_script() {
     if is_elf "$kobo/nickel.real"; then
-        mv "$kobo/nickel.real" "$kobo/nickel" \
-            && echo "$(date '+%F %T') stock reader restored" >>"$conf/install.log"
+        mv "$kobo/nickel.real" "$kobo/nickel" || return 1
+        echo "$(date '+%F %T') stock reader restored, rebooting" >>"$conf/install.log"
+        # rc.local starts nickel at the same time. A stock reader started during the swap did
+        # not react to USB connections until the next boot (seen on the Vision Color).
+        sync
+        reboot
     fi
 }
 

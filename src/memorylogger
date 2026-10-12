@@ -1,0 +1,75 @@
+#!/bin/sh
+# tolino-koreader-boot: boot hook
+#
+# Installed over /usr/local/Kobo/memorylogger (a diagnostic memory logger) by .kobo/Kobo.tgz.
+# /etc/rc.local starts memorylogger as root just before Nickel, the stock reader. This hook:
+#   - installs the KOReader start script as /usr/local/Kobo/nickel, keeping the device's own
+#     Nickel binary as nickel.real (no vendor files ship with this project),
+#   - undoes that when .adds/koreader-boot/uninstall exists,
+#   - starts an SSH server when .adds/koreader-boot/authorized_keys exists.
+kobo=/usr/local/Kobo
+conf=/mnt/onboard/.adds/koreader-boot
+log=/tmp/koreader-boot.log
+
+is_elf() {
+    [ "$(head -c 4 "$1" 2>/dev/null | tail -c 3)" = ELF ]
+}
+
+# Each step renames into place, so rc.local always starts either the old or the new nickel.
+install_start_script() {
+    if is_elf "$kobo/nickel"; then
+        # Fresh install, or a firmware update brought a new Nickel binary.
+        cp "$kobo/nickel" "$kobo/nickel.real.tmp" && mv "$kobo/nickel.real.tmp" "$kobo/nickel.real"
+    fi
+    if ! is_elf "$kobo/nickel.real"; then
+        echo "no Nickel binary to keep as nickel.real, not installing"
+        return 1
+    fi
+    if ! cmp -s "$kobo/koreader-boot" "$kobo/nickel"; then
+        cp "$kobo/koreader-boot" "$kobo/nickel.tmp" && chmod 755 "$kobo/nickel.tmp" \
+            && mv "$kobo/nickel.tmp" "$kobo/nickel" && echo "start script installed"
+    fi
+}
+
+uninstall_start_script() {
+    if is_elf "$kobo/nickel.real"; then
+        mv "$kobo/nickel.real" "$kobo/nickel" && echo "Nickel restored"
+    fi
+}
+
+# KOReader's dropbear reads settings/SSH/authorized_keys relative to its working directory and
+# creates its host key there. It runs from /tmp: anything with its binary or working directory
+# on the user partition blocks USB storage mode.
+start_ssh() {
+    ssh=/tmp/koreader-boot-ssh
+    pid=$(cat /tmp/koreader-boot-ssh.pid 2>/dev/null)
+    if [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null; then
+        return 0   # rc.local runs again when KOReader hands over to Nickel
+    fi
+    mkdir -p "$ssh/settings/SSH"
+    cp /mnt/onboard/.adds/koreader/dropbear "$ssh/" || return 1
+    cp "$conf/authorized_keys" "$ssh/settings/SSH/"
+    [ -f "$conf/ssh_host_key" ] && cp "$conf/ssh_host_key" "$ssh/settings/SSH/dropbear_ed25519_host_key"
+    [ -d /dev/pts ] || { mkdir -p /dev/pts && mount -t devpts devpts /dev/pts; }
+    (cd "$ssh" && ./dropbear -E -R -p 2222 -P /tmp/koreader-boot-ssh.pid) || return 1
+    if [ ! -f "$conf/ssh_host_key" ]; then
+        # The host key is created at the first connection; keep it so it stays the same.
+        (while [ ! -f "$ssh/settings/SSH/dropbear_ed25519_host_key" ]; do sleep 10; done
+         cp "$ssh/settings/SSH/dropbear_ed25519_host_key" "$conf/ssh_host_key") &
+    fi
+}
+
+{
+    if [ -e "$conf/uninstall" ]; then
+        uninstall_start_script
+    elif [ -f "$kobo/koreader-boot" ]; then
+        install_start_script
+    fi
+    if [ -f "$conf/authorized_keys" ] && [ ! -e "$conf/uninstall" ]; then
+        start_ssh
+    fi
+} >>"$log" 2>&1
+
+if [ -x "$kobo/memorylogger.real" ]; then
+    exec "$kobo/memorylogger.real" "$@"
+fi

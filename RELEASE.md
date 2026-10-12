@@ -1,0 +1,1 @@
+Unzip `tolino-koreader-boot.zip` onto the root of the reader's drive, then restart twice. Needs KOReader's kobov5 build in `.adds/koreader`. See the README for fallbacks, uninstall and what was tested.

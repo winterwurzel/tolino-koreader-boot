@@ -1,0 +1,55 @@
+#!/bin/sh
+# tolino-koreader-boot: start script
+#
+# The boot hook installs this as /usr/local/Kobo/nickel; the stock binary stays as nickel.real.
+# rc.local starts it at boot. It runs KOReader instead of Nickel, the stock reader.
+# Nickel starts instead when
+#   - a computer is connected over USB at boot (a charger or power bank does not count),
+#   - .adds/koreader-boot/boot-stock exists,
+#   - KOReader is missing (.adds/koreader/koreader.sh),
+# and takes over when KOReader exits or gives up after crashing.
+ko=/mnt/onboard/.adds/koreader
+conf=/mnt/onboard/.adds/koreader-boot
+log=/tmp/koreader-boot.log
+# Tested on the Tolino Vision Color: SDP = computer, DCP = charger. A device without this file
+# simply has no computer check.
+charger=$(cat /sys/class/power_supply/bd71827_bat/charger_type 2>/dev/null)
+
+if [ -n "${KOREADER_BOOT_STOCK:-}" ] || [ ! -f "$ko/koreader.sh" ] || [ -e "$conf/boot-stock" ] \
+        || [ "$charger" = SDP ] || [ "$charger" = SDP_PC ]; then
+    exec /usr/local/Kobo/nickel.real "$@"
+fi
+# Everything below that starts "nickel" again (nickel.sh reruns rc.local) gets the stock reader.
+export KOREADER_BOOT_STOCK=1
+
+# koreader.sh guesses PLATFORM=freescale on 5.18; USB storage mode then looks for i.MX modules.
+# shellcheck disable=SC1091  # firmware file, only present on the device
+. /usr/libexec/platform/utils.sh
+PLATFORM="$(get_platform_name)"
+export PLATFORM
+# Nickel loads the MediaTek Wi-Fi/BT core driver and starts its firmware daemons; KOReader's
+# enable-wifi.sh loads the remaining modules and expects these to run already.
+mt66xx=/drivers/$PLATFORM/mt66xx
+if [ -d "$mt66xx" ]; then
+    grep -q '^wmt_drv ' /proc/modules || insmod "$mt66xx/wmt_drv.ko"
+    pidof wmt_loader >/dev/null || /usr/bin/wmt_loader >/dev/null 2>&1 &
+    pidof wmt_launcher >/dev/null || /usr/bin/wmt_launcher -p /lib/firmware >/dev/null 2>&1 &
+fi
+# Nickel reads this FIFO; without Nickel, udev and DHCP scripts would block writing to it.
+rm -f /tmp/nickel-hardware-status
+# Outside Nickel, koreader.sh reboots on exit unless a boot menu (KSM's "kbmenu") is running.
+# This placeholder stands in for it, so control comes back here instead.
+sh -c 'while :; do sleep 3600; done' kbmenu-placeholder &
+placeholder=$!
+
+cd "$ko" && sh ./koreader.sh
+status=$?
+kill "$placeholder"
+echo "koreader.sh exited with $status" >>"$log"
+
+if [ "$status" -eq 88 ]; then
+    exit 0   # power off or reboot requested in KOReader; it handles that itself
+fi
+# nickel.sh resets Wi-Fi and reruns rc.local, which starts these again.
+killall -q hindenburg memorylogger memorylogger.real
+cd / && exec sh "$ko/nickel.sh"

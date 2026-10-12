@@ -11,8 +11,9 @@ kobo=/usr/local/Kobo
 conf=/mnt/onboard/.adds/koreader-boot
 log=/tmp/koreader-boot.log
 
+# The firmware's busybox head has no -c.
 is_elf() {
-    [ "$(head -c 4 "$1" 2>/dev/null | tail -c 3)" = ELF ]
+    [ "$(dd if="$1" bs=1 skip=1 count=3 2>/dev/null)" = ELF ]
 }
 
 # Each step renames into place, so rc.local always starts either the old or the new nickel.
@@ -27,13 +28,23 @@ install_start_script() {
     fi
     if ! cmp -s "$kobo/koreader-boot" "$kobo/nickel"; then
         cp "$kobo/koreader-boot" "$kobo/nickel.tmp" && chmod 755 "$kobo/nickel.tmp" \
-            && mv "$kobo/nickel.tmp" "$kobo/nickel" && echo "start script installed"
+            && mv "$kobo/nickel.tmp" "$kobo/nickel" || return 1
+        echo "$(date '+%F %T') start script installed" >>"$conf/install.log"
+        # rc.local usually starts the stock Nickel while the copy above runs. Swapping its
+        # binary underneath it ended in a watchdog reboot with a warning screen (seen once on
+        # the Vision Color); a clean reboot gets to KOReader without that.
+        if pidof nickel >/dev/null; then
+            echo "$(date '+%F %T') stock reader already running, rebooting" >>"$conf/install.log"
+            sync
+            reboot
+        fi
     fi
 }
 
 uninstall_start_script() {
     if is_elf "$kobo/nickel.real"; then
-        mv "$kobo/nickel.real" "$kobo/nickel" && echo "Nickel restored"
+        mv "$kobo/nickel.real" "$kobo/nickel" \
+            && echo "$(date '+%F %T') stock reader restored" >>"$conf/install.log"
     fi
 }
 

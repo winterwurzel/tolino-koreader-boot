@@ -8,6 +8,13 @@
 #   - .adds/koreader-boot/boot-stock exists,
 #   - KOReader is missing (.adds/koreader/koreader.sh),
 # and takes over when KOReader exits or gives up after crashing.
+
+# Installed as "nickel", this process would be named nickel. koreader.sh takes a running "nickel"
+# for the stock reader and kills it (pkill nickel), along with everything started from here.
+if [ -z "${KOREADER_BOOT_RENAMED:-}" ]; then
+    KOREADER_BOOT_RENAMED=1 exec /bin/sh "$0" "$@"
+fi
+
 ko=/mnt/onboard/.adds/koreader
 conf=/mnt/onboard/.adds/koreader-boot
 log=/tmp/koreader-boot.log
@@ -16,8 +23,14 @@ log=/tmp/koreader-boot.log
 charger=$(cat /sys/class/power_supply/bd71827_bat/charger_type 2>/dev/null)
 
 if [ -n "${KOREADER_BOOT_STOCK:-}" ] || [ ! -f "$ko/koreader.sh" ] || [ -e "$conf/boot-stock" ] \
-        || [ "$charger" = SDP ] || [ "$charger" = SDP_PC ]; then
-    exec /usr/local/Kobo/nickel.real "$@"
+        || [ -e "$conf/uninstall" ] || [ "$charger" = SDP ] || [ "$charger" = SDP_PC ]; then
+    if [ -f /usr/local/Kobo/nickel.real ]; then
+        exec /usr/local/Kobo/nickel.real "$@"
+    fi
+    # Uninstall: the boot hook has just moved the stock binary back to nickel.
+    if [ "$(dd if=/usr/local/Kobo/nickel bs=1 skip=1 count=3 2>/dev/null)" = ELF ]; then
+        exec /usr/local/Kobo/nickel "$@"
+    fi
 fi
 # Everything below that starts "nickel" again (nickel.sh reruns rc.local) gets the stock reader.
 export KOREADER_BOOT_STOCK=1
@@ -37,6 +50,20 @@ if [ -d "$mt66xx" ]; then
 fi
 # Nickel reads this FIFO; without Nickel, udev and DHCP scripts would block writing to it.
 rm -f /tmp/nickel-hardware-status
+# The firmware counts boots (bootcount-ctl). Once the counter reaches 4 it treats the device as
+# boot-looping and offers a factory reset at the next boot. Nickel resets the counter after it has
+# started; without Nickel nothing does. Reset it as soon as KOReader's own process (luajit)
+# runs, which is the earliest the reader can be switched off again from KOReader. A KOReader
+# that crashes later is no boot loop: koreader.sh gives up and Nickel takes over below.
+(
+    waited=0
+    until pidof luajit >/dev/null; do
+        [ "$waited" -ge 300 ] && { echo "KOReader did not start, boot counter kept"; exit 1; }
+        sleep 2
+        waited=$((waited + 2))
+    done
+    bootcount-ctl reset >/dev/null && echo "$(date '+%F %T') boot counter reset"
+) >>"$log" 2>&1 &
 # Outside Nickel, koreader.sh reboots on exit unless a boot menu (KSM's "kbmenu") is running.
 # This placeholder stands in for it, so control comes back here instead.
 sh -c 'while :; do sleep 3600; done' kbmenu-placeholder &

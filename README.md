@@ -31,11 +31,11 @@ exit. The start script here does those three things itself (see [Details](#detai
    [releases](https://github.com/winterwurzel/tolino-koreader-boot/releases).
 2. Connect the reader to a computer and unzip the file onto the root of its drive. That adds
    `.kobo/Kobo.tgz` and `.adds/koreader-boot/`. Both folders are hidden on most systems.
-3. Eject, then restart the reader. `Kobo.tgz` disappears once the reader has applied it.
-4. Restart once more. From now on the reader boots into KOReader.
+3. Eject, then restart the reader. While the stock reader starts, the hook installs itself and
+   restarts the reader once more on its own. After that you're in KOReader, and from now on
+   the reader boots into KOReader. `Kobo.tgz` disappears once the reader has applied it.
 
-On the first restart the hook installs itself. Depending on timing you'll get the stock reader
-or KOReader that time.
+Each install and uninstall is noted in `.adds/koreader-boot/install.log`.
 
 ## Getting to the stock reader
 
@@ -97,6 +97,13 @@ What the stock reader normally does at boot, and what the start script does inst
 | The stock reader loads `wmt_drv` and starts `wmt_loader` / `wmt_launcher` (MediaTek Wi-Fi firmware) | "Failed to connect to wpa_supplicant control socket" | Load and start them before KOReader |
 | Outside the stock reader, `koreader.sh` reboots on exit unless a boot menu (`kbmenu`) runs | Exit reboots straight back into KOReader | Placeholder process; Exit hands over to the stock reader |
 | The stock reader reads `/tmp/nickel-hardware-status` | udev and DHCP scripts can block writing to it | Removed before KOReader starts |
+| The stock reader runs `bootcount-ctl reset` once it has started. At boot, `/etc/init.d/mount-userdata` increments the counter and checks `bootcount-ctl boot-ok` (fails at 4). | After 4 boots without the stock reader, the firmware shows its **factory-reset prompt** (a warning sign with a button). Tapping the button **wipes the device**. | `bootcount-ctl reset` as soon as KOReader's process runs |
+| `koreader.sh` decides whether it was started from the stock reader with `pkill -0 nickel` | The start script, installed as `nickel`, gets killed along with everything it started | The start script re-executes itself as `sh` first |
+
+The factory-reset prompt comes up before anything else starts, and as far as I know the only
+way past it is the reset. So the counter has to be reset reliably. That's why the start script
+does it as early as possible, and why it was tested across 7 consecutive boots. If a later
+firmware changes this mechanism, check `/etc/init.d/mount-userdata` before installing.
 
 Detecting a computer at boot reads `/sys/class/power_supply/bd71827_bat/charger_type`
 (`SDP` = computer, `DCP` = charger). That path was checked on the Vision Color. On devices

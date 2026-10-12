@@ -2,7 +2,7 @@
 """Build dist/tolino-koreader-boot.zip, laid out like the reader's USB drive.
 
     .kobo/Kobo.tgz                  boot hook + start script, unpacked into /usr/local/Kobo
-    .adds/koreader-boot/README.txt  the switches that live in this folder
+    .adds/koreader-boot/README      the switches that live in this folder
 """
 import io
 import os
@@ -19,6 +19,7 @@ boot-stock        exists: boot the stock reader instead of KOReader
 uninstall         exists: put the stock reader back for good at the next boot
 authorized_keys   SSH public keys allowed to log in as root on port 2222
 ssh_host_key      created automatically, keeps the SSH host key the same across boots
+install.log       when the start script was installed or removed
 
 More: https://github.com/winterwurzel/tolino-koreader-boot
 """
@@ -43,7 +44,7 @@ def main():
     out = os.path.join(DIST, 'tolino-koreader-boot.zip')
     with zipfile.ZipFile(out, 'w', zipfile.ZIP_DEFLATED) as z:
         z.writestr('.kobo/Kobo.tgz', kobo_tgz())
-        z.writestr('.adds/koreader-boot/README.txt', README)
+        z.writestr('.adds/koreader-boot/README', README)
     print('built', out)
 
 

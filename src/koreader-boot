@@ -69,7 +69,10 @@ rm -f /tmp/nickel-hardware-status
 sh -c 'while :; do sleep 3600; done' kbmenu-placeholder &
 placeholder=$!
 
-cd "$ko" && sh ./koreader.sh
+# Subshell: this script stays in /, since a working directory on the user partition blocks USB
+# storage mode ("filesystem busy").
+cd /
+(cd "$ko" && exec sh ./koreader.sh)
 status=$?
 kill "$placeholder"
 echo "koreader.sh exited with $status" >>"$log"
